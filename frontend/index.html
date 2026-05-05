@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Zomato Social Watch</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --zomato:      #E23744;
+      --zomato-dark: #b82d38;
+      --bg:          #f4f5f7;
+      --surface:     #ffffff;
+      --border:      #e1e4e8;
+      --text:        #1a1d23;
+      --muted:       #6b7280;
+      --radius:      8px;
+
+      --c-food-safety:        #dc2626;
+      --c-viral-negative:     #ea580c;
+      --c-founder-mention:    #7c3aed;
+      --c-delivery-complaint: #d97706;
+      --c-competitor-attack:  #2563eb;
+      --c-pr-opportunity:     #16a34a;
+      --c-policy-regulatory:  #4338ca;
+      --c-noise:              #6b7280;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 4px rgba(0,0,0,.06);
+    }
+
+    .header-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-decoration: none;
+    }
+
+    .logo-icon {
+      width: 32px;
+      height: 32px;
+      background: var(--zomato);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 16px;
+    }
+
+    .logo-text {
+      font-size: 16px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .logo-text span { color: var(--zomato); }
+
+    .header-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+    }
+
+    .counters {
+      display: flex;
+      gap: 4px;
+      flex: 1;
+    }
+
+    .counter-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .counter-pill strong {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .counter-pill.escalated strong { color: var(--zomato); }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+
+    #last-refresh {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .live-dot {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      background: #22c55e;
+      border-radius: 50%;
+      margin-right: 4px;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: .35; }
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      transition: background .15s, opacity .15s;
+    }
+
+    .btn-primary {
+      background: var(--zomato);
+      color: #fff;
+    }
+
+    .btn-primary:hover  { background: var(--zomato-dark); }
+    .btn-primary:active { opacity: .85; }
+
+    .btn-primary:disabled {
+      opacity: .6;
+      cursor: not-allowed;
+    }
+
+    /* ── Filter bar ──────────────────────────────────── */
+    .filter-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 60px;
+      z-index: 90;
+    }
+
+    .filter-inner {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .filter-label {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-right: 4px;
+    }
+
+    .filter-btn {
+      padding: 5px 11px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      transition: all .15s;
+      white-space: nowrap;
+    }
+
+    .filter-btn:hover { border-color: #aaa; color: var(--text); }
+
+    .filter-btn.active {
+      color: #fff;
+      border-color: transparent;
+    }
+
+    .filter-sep {
+      width: 1px;
+      height: 20px;
+      background: var(--border);
+      margin: 0 4px;
+    }
+
+    .toggle-btn {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 5px 11px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1.5px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      transition: all .15s;
+    }
+
+    .toggle-btn.active {
+      background: #fff0f1;
+      border-color: var(--zomato);
+      color: var(--zomato);
+    }
+
+    /* ── Main layout ────────────────────────────────── */
+    .layout {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      gap: 24px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { display: none; }
+    }
+
+    /* ── Feed ────────────────────────────────────────── */
+    #feed-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    #feed-header h2 {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    #post-count {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    #feed {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* ── Post card ───────────────────────────────────── */
+    .post-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      border-left: 4px solid transparent;
+      transition: box-shadow .15s, transform .1s;
+      position: relative;
+    }
+
+    .post-card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,.07);
+      transform: translateY(-1px);
+    }
+
+    .post-card.escalated {
+      border-left-color: var(--zomato);
+    }
+
+    .card-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 9px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .03em;
+    }
+
+    .source-badge { background: #f1f3f5; color: #495057; }
+
+    .warn-badge {
+      background: #fff0f1;
+      color: var(--zomato);
+      font-size: 12px;
+    }
+
+    .score-badge {
+      margin-left: auto;
+      font-size: 20px;
+      font-weight: 800;
+      min-width: 44px;
+      text-align: center;
+      color: var(--muted);
+      padding: 0;
+      background: none;
+    }
+
+    .score-badge.high { color: var(--zomato); }
+
+    .card-title {
+      font-size: 15px;
+      font-weight: 600;
+      line-height: 1.4;
+      margin-bottom: 6px;
+    }
+
+    .card-title a {
+      color: var(--text);
+      text-decoration: none;
+    }
+
+    .card-title a:hover { color: var(--zomato); text-decoration: underline; }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-bottom: 8px;
+      flex-wrap: wrap;
+    }
+
+    .card-meta span { display: flex; align-items: center; gap: 3px; }
+
+    .card-reasoning {
+      font-size: 12.5px;
+      font-style: italic;
+      color: var(--muted);
+      line-height: 1.5;
+      padding: 8px 10px;
+      background: var(--bg);
+      border-radius: 6px;
+      margin-bottom: 10px;
+      border-left: 3px solid var(--border);
+    }
+
+    .card-actions {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-sm {
+      padding: 5px 10px;
+      font-size: 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-weight: 600;
+      transition: all .15s;
+    }
+
+    .btn-sm:hover { background: var(--bg); color: var(--text); }
+
+    .btn-sm.view {
+      border-color: #c7d2fe;
+      color: #4338ca;
+      background: #eef2ff;
+    }
+
+    .btn-sm.view:hover { background: #e0e7ff; }
+
+    /* ── Empty state ─────────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; }
+
+    /* ── Loading skeleton ────────────────────────────── */
+    .skeleton {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+    }
+
+    .skel-line {
+      height: 12px;
+      background: linear-gradient(90deg, #f0f0f0 25%, #e8e8e8 50%, #f0f0f0 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 6px;
+      margin-bottom: 10px;
+    }
+
+    @keyframes shimmer {
+      0%   { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    /* ── Sidebar ─────────────────────────────────────── */
+    .sidebar {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      position: sticky;
+      top: 120px;
+    }
+
+    .widget {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px;
+    }
+
+    .widget-title {
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .source-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 5px 0;
+      font-size: 13px;
+      border-bottom: 1px solid var(--bg);
+    }
+
+    .source-row:last-child { border-bottom: none; }
+
+    .source-name { display: flex; align-items: center; gap: 7px; }
+
+    .source-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+    }
+
+    .source-count {
+      font-weight: 700;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .cat-breakdown-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 4px 0;
+      font-size: 12px;
+    }
+
+    .cat-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 6px;
+      flex-shrink: 0;
+    }
+
+    .escalation-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .esc-item {
+      font-size: 12px;
+      padding: 8px;
+      background: #fff0f1;
+      border-radius: 6px;
+      border-left: 3px solid var(--zomato);
+    }
+
+    .esc-item .esc-title {
+      font-weight: 600;
+      color: var(--text);
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      margin-bottom: 3px;
+    }
+
+    .esc-item .esc-meta { color: var(--muted); font-size: 11px; }
+
+    /* ── Toast ───────────────────────────────────────── */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      background: #1a1d23;
+      color: #fff;
+      padding: 10px 16px;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 500;
+      opacity: 0;
+      transform: translateY(8px);
+      transition: all .25s;
+      pointer-events: none;
+      z-index: 200;
+    }
+
+    #toast.show { opacity: 1; transform: translateY(0); }
+
+    /* ── Category colors ─────────────────────────────── */
+    .cat-FOOD_SAFETY        { background: var(--c-food-safety);        color: #fff; }
+    .cat-VIRAL_NEGATIVE     { background: var(--c-viral-negative);     color: #fff; }
+    .cat-FOUNDER_MENTION    { background: var(--c-founder-mention);    color: #fff; }
+    .cat-DELIVERY_COMPLAINT { background: var(--c-delivery-complaint); color: #fff; }
+    .cat-COMPETITOR_ATTACK  { background: var(--c-competitor-attack);  color: #fff; }
+    .cat-PR_OPPORTUNITY     { background: var(--c-pr-opportunity);     color: #fff; }
+    .cat-POLICY_REGULATORY  { background: var(--c-policy-regulatory);  color: #fff; }
+    .cat-NOISE              { background: var(--c-noise);              color: #fff; }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ──────────────────────────────────────────── -->
+<header>
+  <div class="header-inner">
+    <a class="logo" href="#">
+      <div class="logo-icon">🍽️</div>
+      <span class="logo-text">Zomato <span>Social Watch</span></span>
+    </a>
+    <div class="header-divider"></div>
+    <div class="counters">
+      <div class="counter-pill">
+        <span>Total</span>
+        <strong id="cnt-total">—</strong>
+      </div>
+      <div class="counter-pill escalated">
+        <span>⚠️ Escalated</span>
+        <strong id="cnt-escalated">—</strong>
+      </div>
+      <div class="counter-pill">
+        <span>Sources</span>
+        <strong id="cnt-sources">—</strong>
+      </div>
+    </div>
+    <div class="header-right">
+      <span id="last-refresh"><span class="live-dot"></span>Never refreshed</span>
+      <button class="btn btn-primary" id="refresh-btn" onclick="triggerRefresh()">
+        ↻ Refresh Now
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- ── Filter bar ────────────────────────────────────────── -->
+<div class="filter-bar">
+  <div class="filter-inner">
+    <span class="filter-label">Filter</span>
+    <button class="filter-btn active" data-cat="ALL" onclick="setCategory(this)" style="background:#1a1d23; border-color:#1a1d23; color:#fff;">All</button>
+    <button class="filter-btn" data-cat="FOOD_SAFETY"        onclick="setCategory(this)">🦠 Food Safety</button>
+    <button class="filter-btn" data-cat="VIRAL_NEGATIVE"     onclick="setCategory(this)">🔥 Viral Negative</button>
+    <button class="filter-btn" data-cat="FOUNDER_MENTION"    onclick="setCategory(this)">👤 Founder Mention</button>
+    <button class="filter-btn" data-cat="DELIVERY_COMPLAINT" onclick="setCategory(this)">📦 Delivery</button>
+    <button class="filter-btn" data-cat="COMPETITOR_ATTACK"  onclick="setCategory(this)">⚔️ Competitor</button>
+    <button class="filter-btn" data-cat="PR_OPPORTUNITY"     onclick="setCategory(this)">💚 PR Opportunity</button>
+    <button class="filter-btn" data-cat="POLICY_REGULATORY"  onclick="setCategory(this)">⚖️ Policy</button>
+    <button class="filter-btn" data-cat="NOISE"              onclick="setCategory(this)">🔇 Noise</button>
+    <div class="filter-sep"></div>
+    <button class="toggle-btn" id="esc-toggle" onclick="toggleEscalations()">⚠️ Escalations Only</button>
+  </div>
+</div>
+
+<!-- ── Body ──────────────────────────────────────────────── -->
+<div class="layout">
+  <main>
+    <div id="feed-header">
+      <h2>Live Feed</h2>
+      <span id="post-count"></span>
+    </div>
+    <div id="feed">
+      <!-- skeleton on load -->
+      <div class="skeleton"><div class="skel-line" style="width:40%"></div><div class="skel-line" style="width:80%"></div><div class="skel-line" style="width:60%"></div></div>
+      <div class="skeleton"><div class="skel-line" style="width:35%"></div><div class="skel-line" style="width:75%"></div><div class="skel-line" style="width:55%"></div></div>
+      <div class="skeleton"><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:85%"></div><div class="skel-line" style="width:50%"></div></div>
+    </div>
+  </main>
+
+  <aside class="sidebar">
+    <!-- Source breakdown -->
+    <div class="widget">
+      <div class="widget-title">Sources (Latest Batch)</div>
+      <div id="source-breakdown">
+        <div class="source-row"><span class="source-name"><span class="source-dot" style="background:#ff4500"></span>Reddit</span><span class="source-count" id="src-reddit">—</span></div>
+        <div class="source-row"><span class="source-name"><span class="source-dot" style="background:#ff6600"></span>Hacker News</span><span class="source-count" id="src-hackernews">—</span></div>
+        <div class="source-row"><span class="source-name"><span class="source-dot" style="background:#4285f4"></span>Google News</span><span class="source-count" id="src-google_news">—</span></div>
+        <div class="source-row"><span class="source-name"><span class="source-dot" style="background:#34a853"></span>Play Store</span><span class="source-count" id="src-playstore">—</span></div>
+        <div class="source-row"><span class="source-name"><span class="source-dot" style="background:#1da1f2"></span>Twitter</span><span class="source-count" id="src-twitter">—</span></div>
+        <div class="source-row"><span class="source-name"><span class="source-dot" style="background:#f26522"></span>RSS</span><span class="source-count" id="src-rss">—</span></div>
+      </div>
+    </div>
+
+    <!-- Category breakdown -->
+    <div class="widget">
+      <div class="widget-title">Category Breakdown</div>
+      <div id="cat-breakdown"></div>
+    </div>
+
+    <!-- Top escalations -->
+    <div class="widget">
+      <div class="widget-title">🚨 Top Escalations</div>
+      <div id="top-escalations" class="escalation-list">
+        <p style="font-size:13px; color:var(--muted)">No escalations yet.</p>
+      </div>
+    </div>
+  </aside>
+</div>
+
+<div id="toast"></div>
+
+<script>
+  // Empty string = same origin when served by Express; override for local file:// usage
+  const API = window.location.protocol === 'file:' ? 'http://localhost:3001' : '';
+  const POLL_MS = 30_000;
+
+  let allPosts = [];
+  let reviewedIds = new Set(JSON.parse(localStorage.getItem('reviewed') || '[]'));
+  let activeCategory = 'ALL';
+  let escalationsOnly = false;
+
+  // ── Source icon/label ─────────────────────────────────────────
+  const SOURCE_LABEL = {
+    reddit:      { icon: '🟠', label: 'Reddit' },
+    hackernews:  { icon: '🔶', label: 'HN' },
+    google_news: { icon: '🔵', label: 'News' },
+    playstore:   { icon: '🟢', label: 'Play' },
+    twitter:     { icon: '🐦', label: 'Twitter' },
+    rss:         { icon: '📡', label: 'RSS' },
+  };
+
+  const CAT_COLORS = {
+    FOOD_SAFETY:        '#dc2626',
+    VIRAL_NEGATIVE:     '#ea580c',
+    FOUNDER_MENTION:    '#7c3aed',
+    DELIVERY_COMPLAINT: '#d97706',
+    COMPETITOR_ATTACK:  '#2563eb',
+    PR_OPPORTUNITY:     '#16a34a',
+    POLICY_REGULATORY:  '#4338ca',
+    NOISE:              '#6b7280',
+  };
+
+  const CAT_ICONS = {
+    FOOD_SAFETY:        '🦠',
+    VIRAL_NEGATIVE:     '🔥',
+    FOUNDER_MENTION:    '👤',
+    DELIVERY_COMPLAINT: '📦',
+    COMPETITOR_ATTACK:  '⚔️',
+    PR_OPPORTUNITY:     '💚',
+    POLICY_REGULATORY:  '⚖️',
+    NOISE:              '🔇',
+  };
+
+  // ── Helpers ───────────────────────────────────────────────────
+  function timeAgo(isoOrDate) {
+    const d = new Date(isoOrDate);
+    const secs = Math.floor((Date.now() - d) / 1000);
+    if (secs < 60)   return `${secs}s ago`;
+    if (secs < 3600) return `${Math.floor(secs/60)}m ago`;
+    if (secs < 86400) return `${Math.floor(secs/3600)}h ago`;
+    return `${Math.floor(secs/86400)}d ago`;
+  }
+
+  function showToast(msg, duration = 2800) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), duration);
+  }
+
+  function persistReviewed() {
+    localStorage.setItem('reviewed', JSON.stringify([...reviewedIds]));
+  }
+
+  // ── Render ────────────────────────────────────────────────────
+  function filteredPosts() {
+    return allPosts.filter(p => {
+      if (reviewedIds.has(p.id)) return false;
+      if (escalationsOnly && !p.escalate) return false;
+      if (activeCategory !== 'ALL' && p.category !== activeCategory) return false;
+      return true;
+    });
+  }
+
+  function renderCard(p) {
+    const src = SOURCE_LABEL[p.source] || { icon: '⬛', label: p.source };
+    const isHigh = p.score >= 60;
+    const cat = p.category || 'NOISE';
+    const catColor = CAT_COLORS[cat] || '#6b7280';
+
+    return `
+      <div class="post-card ${p.escalate ? 'escalated' : ''}" id="card-${p.id}">
+        <div class="card-top">
+          <span class="badge source-badge">${src.icon} ${src.label}</span>
+          <span class="badge cat-${cat}">${CAT_ICONS[cat] || ''} ${cat.replace(/_/g, ' ')}</span>
+          ${p.escalate ? '<span class="badge warn-badge">⚠️ ESCALATE</span>' : ''}
+          <span class="score-badge ${isHigh ? 'high' : ''}">${p.score ?? 0}</span>
+        </div>
+
+        <div class="card-title">
+          <a href="${p.url}" target="_blank" rel="noopener">${escHtml(p.title || '(no title)')}</a>
+        </div>
+
+        <div class="card-meta">
+          <span>👤 ${escHtml(p.author || 'unknown')}</span>
+          <span>🕐 ${timeAgo(p.created_at)}</span>
+          ${p.score > 0 ? `<span>▲ ${p.score} pts</span>` : ''}
+        </div>
+
+        ${p.reasoning ? `<div class="card-reasoning">${escHtml(p.reasoning)}</div>` : ''}
+
+        <div class="card-actions">
+          <button class="btn-sm" onclick="markReviewed('${p.id}')">✓ Mark Reviewed</button>
+          <a class="btn-sm view" href="${p.url}" target="_blank" rel="noopener">↗ View Original</a>
+        </div>
+      </div>`;
+  }
+
+  function renderFeed() {
+    const posts = filteredPosts();
+    const feed = document.getElementById('feed');
+    document.getElementById('post-count').textContent =
+      `Showing ${posts.length} of ${allPosts.filter(p => !reviewedIds.has(p.id)).length}`;
+
+    if (!posts.length) {
+      feed.innerHTML = `
+        <div class="empty-state">
+          <div class="icon">📭</div>
+          <p>No posts match your current filters.</p>
+        </div>`;
+      return;
+    }
+
+    feed.innerHTML = posts.map(renderCard).join('');
+  }
+
+  function renderSidebar(status) {
+    // Counters
+    const esc = allPosts.filter(p => p.escalate).length;
+    const srcActive = Object.values(status.sourceBreakdown || {}).filter(v => v > 0).length;
+    document.getElementById('cnt-total').textContent = allPosts.length;
+    document.getElementById('cnt-escalated').textContent = esc;
+    document.getElementById('cnt-sources').textContent = srcActive || '—';
+
+    // Source breakdown
+    const sb = status.sourceBreakdown || {};
+    ['reddit', 'hackernews', 'google_news', 'playstore', 'twitter', 'rss'].forEach(src => {
+      const el = document.getElementById(`src-${src}`);
+      if (el) el.textContent = sb[src] ?? 0;
+    });
+
+    // Category breakdown
+    const cats = {};
+    allPosts.forEach(p => { cats[p.category] = (cats[p.category] || 0) + 1; });
+    const sortedCats = Object.entries(cats).sort((a, b) => b[1] - a[1]);
+    document.getElementById('cat-breakdown').innerHTML = sortedCats.map(([cat, n]) => `
+      <div class="cat-breakdown-row">
+        <span><span class="cat-dot" style="background:${CAT_COLORS[cat]}"></span>${cat.replace(/_/g,' ')}</span>
+        <strong>${n}</strong>
+      </div>`).join('') || '<p style="font-size:13px; color:var(--muted)">No data yet.</p>';
+
+    // Top escalations
+    const topEsc = allPosts.filter(p => p.escalate && !reviewedIds.has(p.id))
+      .sort((a,b) => b.score - a.score).slice(0, 5);
+    document.getElementById('top-escalations').innerHTML = topEsc.length
+      ? topEsc.map(p => `
+          <div class="esc-item">
+            <div class="esc-title">${escHtml(p.title)}</div>
+            <div class="esc-meta">${p.category.replace(/_/g,' ')} · Score ${p.score} · ${timeAgo(p.created_at)}</div>
+          </div>`).join('')
+      : '<p style="font-size:13px; color:var(--muted)">No escalations yet.</p>';
+
+    // Last refresh
+    document.getElementById('last-refresh').innerHTML =
+      `<span class="live-dot"></span>Updated ${status.lastRefresh ? timeAgo(status.lastRefresh) : 'never'}`;
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
+  }
+
+  // ── Actions ───────────────────────────────────────────────────
+  function markReviewed(id) {
+    reviewedIds.add(id);
+    persistReviewed();
+    const card = document.getElementById(`card-${id}`);
+    if (card) {
+      card.style.transition = 'opacity .3s, transform .3s';
+      card.style.opacity = '0';
+      card.style.transform = 'translateX(20px)';
+      setTimeout(() => renderFeed(), 320);
+    }
+    showToast('Marked as reviewed.');
+  }
+
+  function setCategory(btn) {
+    activeCategory = btn.dataset.cat;
+    document.querySelectorAll('.filter-btn').forEach(b => {
+      b.classList.remove('active');
+      b.style.background = '';
+      b.style.borderColor = '';
+      b.style.color = '';
+    });
+    btn.classList.add('active');
+    if (activeCategory === 'ALL') {
+      btn.style.background = '#1a1d23';
+      btn.style.borderColor = '#1a1d23';
+      btn.style.color = '#fff';
+    } else {
+      const color = CAT_COLORS[activeCategory] || '#6b7280';
+      btn.style.background = color;
+      btn.style.borderColor = color;
+      btn.style.color = '#fff';
+    }
+    renderFeed();
+  }
+
+  function toggleEscalations() {
+    escalationsOnly = !escalationsOnly;
+    const btn = document.getElementById('esc-toggle');
+    btn.classList.toggle('active', escalationsOnly);
+    renderFeed();
+  }
+
+  async function triggerRefresh() {
+    const btn = document.getElementById('refresh-btn');
+    btn.disabled = true;
+    btn.textContent = '⏳ Refreshing…';
+    showToast('Refresh triggered — results will appear in ~60s.');
+    try {
+      await fetch(`${API}/api/refresh`, { method: 'POST' });
+      // Give the server a moment then re-poll
+      setTimeout(fetchAndRender, 3000);
+    } catch {
+      showToast('Could not reach server.');
+    } finally {
+      setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '↻ Refresh Now';
+      }, 5000);
+    }
+  }
+
+  // ── Data fetching ─────────────────────────────────────────────
+  async function fetchAndRender() {
+    try {
+      const [postsRes, statusRes] = await Promise.all([
+        fetch(`${API}/api/posts`),
+        fetch(`${API}/api/status`),
+      ]);
+      if (!postsRes.ok || !statusRes.ok) throw new Error('API error');
+      allPosts = await postsRes.json();
+      const status = await statusRes.json();
+      renderFeed();
+      renderSidebar(status);
+    } catch (err) {
+      document.getElementById('last-refresh').innerHTML =
+        '<span style="color:#dc2626">⚠ Server unreachable</span>';
+    }
+  }
+
+  // ── Init ──────────────────────────────────────────────────────
+  fetchAndRender();
+  setInterval(fetchAndRender, POLL_MS);
+</script>
+</body>
+</html>
