@@ -81,7 +81,7 @@ export async function fetchReddit({ config = {}, credentials = {} } = {}) {
   // Subreddit-scoped search is intentionally skipped — multiplying endpoints causes timeouts.
   const topQueries = queries.slice(0, 3);
   const endpoints = topQueries.map(q =>
-    `https://www.reddit.com/search.json?q=${encodeURIComponent(q)}&sort=relevance&t=week&limit=50`
+    `https://www.reddit.com/search.json?q=${encodeURIComponent(q)}&sort=new&t=day&limit=50`
   );
 
   const delay = ms => new Promise(r => setTimeout(r, ms));
