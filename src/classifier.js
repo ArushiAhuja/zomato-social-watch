@@ -1,201 +1,110 @@
 import OpenAI from 'openai';
 
-const hasApiKey = !!process.env.OPENAI_API_KEY?.trim();
-const client = hasApiKey ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY }) : null;
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const CATEGORIES = [
-  'DELIVERY_COMPLAINT',
-  'FOOD_SAFETY',
-  'FOUNDER_MENTION',
-  'VIRAL_NEGATIVE',
-  'COMPETITOR_ATTACK',
-  'PR_OPPORTUNITY',
-  'POLICY_REGULATORY',
-  'NOISE',
-];
+// Circuit breaker: skip OpenAI for the rest of the process lifetime if quota exceeded
+let openaiQuotaExceeded = false;
 
-const CATEGORY_SEVERITY = {
-  FOOD_SAFETY: 30,
-  VIRAL_NEGATIVE: 25,
-  POLICY_REGULATORY: 20,
-  FOUNDER_MENTION: 20,
-  DELIVERY_COMPLAINT: 15,
-  COMPETITOR_ATTACK: 15,
-  PR_OPPORTUNITY: 10,
-  NOISE: 0,
-};
+// categories: [{ id, name, description, severity }]
+// posts: [{ id, source, title, body, score, created_at, ... }]
+export async function classifyPosts(posts, categories) {
+  const results = [];
+  const batchSize = 5;
 
-const ESCALATE_THRESHOLD = parseInt(process.env.ESCALATE_THRESHOLD ?? '60', 10);
-const BATCH_SIZE = 5;
-
-function toDate(val) {
-  if (val instanceof Date) return val;
-  if (typeof val === 'string' || typeof val === 'number') return new Date(val);
-  return new Date(0);
-}
-
-function engagementScore(post) {
-  if (post.source === 'playstore') return 0;
-  const raw = post.score ?? 0;
-  if (raw <= 0) return 0;
-  return Math.min(30, Math.round((Math.log10(raw + 1) / Math.log10(10001)) * 30));
-}
-
-function recencyScore(post) {
-  const ageMs = Date.now() - toDate(post.created_at).getTime();
-  const ageHr = ageMs / (1000 * 60 * 60);
-  if (ageHr < 1) return 20;
-  if (ageHr < 6) return 10;
-  return 0;
-}
-
-function computeScore(post, category, sentimentIntensity) {
-  return (
-    engagementScore(post) +
-    recencyScore(post) +
-    (CATEGORY_SEVERITY[category] ?? 0) +
-    Math.min(20, Math.max(0, sentimentIntensity))
-  );
-}
-
-const SYSTEM_PROMPT = `You are a social media analyst for Zomato's crisis & reputation team.
-For each post you receive, output ONLY a valid JSON array — one object per post, same order.
-Each object must have exactly these keys:
-  "category": one of ${CATEGORIES.join(', ')}
-  "sentiment_intensity": integer 0–20 (0 = neutral/positive, 20 = extremely negative/urgent)
-  "reasoning": one sentence explaining your classification
-
-Category definitions:
-- DELIVERY_COMPLAINT: delayed, wrong, or missing orders
-- FOOD_SAFETY: hygiene issues, foreign objects, illness reports
-- FOUNDER_MENTION: Deepinder Goyal or Albinder Dhindsa named directly
-- VIRAL_NEGATIVE: negative post with high engagement or viral potential
-- COMPETITOR_ATTACK: unfavorable comparisons to Swiggy, Blinkit, Zepto
-- PR_OPPORTUNITY: praise, loyalty stories, positive viral content
-- POLICY_REGULATORY: government, FSSAI, legal, tax, or labor-related
-- NOISE: irrelevant, spam, or only tangentially related to Zomato
-
-Output ONLY the JSON array. No markdown, no explanation.`;
-
-function buildUserMessage(batch) {
-  return JSON.stringify(
-    batch.map((post, i) => ({
-      index: i,
-      source: post.source,
-      title: post.title,
-      body: post.body ? post.body.slice(0, 400) : '',
-      score: post.score,
-    })),
-    null,
-    2
-  );
-}
-
-function parseResponse(text, batchSize) {
-  const cleaned = text.replace(/```(?:json)?/gi, '').replace(/```/g, '').trim();
-  let parsed;
-  try {
-    parsed = JSON.parse(cleaned);
-  } catch {
-    const match = cleaned.match(/\[[\s\S]*\]/);
-    if (!match) throw new Error('No JSON array found in response');
-    parsed = JSON.parse(match[0]);
+  for (let i = 0; i < posts.length; i += batchSize) {
+    const batch = posts.slice(i, i + batchSize);
+    try {
+      if (process.env.OPENAI_API_KEY && !openaiQuotaExceeded) {
+        const classified = await classifyBatch(batch, categories);
+        results.push(...classified);
+      } else {
+        results.push(...keywordClassify(batch, categories));
+      }
+    } catch (err) {
+      if (err.status === 429 || err.message?.includes('quota')) {
+        openaiQuotaExceeded = true;
+        console.warn('[classifier] OpenAI quota exceeded — switching to keyword fallback for this session');
+      } else {
+        console.warn('[classifier] batch error (using fallback):', err.message);
+      }
+      results.push(...keywordClassify(batch, categories));
+    }
   }
-  if (!Array.isArray(parsed) || parsed.length !== batchSize) {
-    throw new Error(
-      `Expected array of ${batchSize}, got ${Array.isArray(parsed) ? parsed.length : typeof parsed}`
-    );
-  }
-  return parsed;
+
+  return results;
 }
 
-function safeClassification(raw) {
-  const category = CATEGORIES.includes(raw?.category) ? raw.category : 'NOISE';
-  const sentimentIntensity = Number.isFinite(raw?.sentiment_intensity)
-    ? Math.min(20, Math.max(0, raw.sentiment_intensity))
-    : 0;
-  const reasoning =
-    typeof raw?.reasoning === 'string' ? raw.reasoning : 'Classification unavailable.';
-  return { category, sentimentIntensity, reasoning };
+// Keyword-based classification — used when OpenAI is unavailable
+function keywordClassify(posts, categories) {
+  return posts.map(post => {
+    const text = `${post.title || ''} ${post.body || ''}`.toLowerCase();
+
+    // Find best matching category by keyword overlap with name + description
+    let bestCategory = null;
+    let bestScore = 0;
+
+    for (const cat of categories) {
+      const keywords = `${cat.name} ${cat.description || ''}`.toLowerCase().split(/\W+/).filter(w => w.length > 3);
+      const matches = keywords.filter(kw => text.includes(kw)).length;
+      const score = keywords.length > 0 ? matches / keywords.length : 0;
+      if (score > bestScore) {
+        bestScore = score;
+        bestCategory = cat;
+      }
+    }
+
+    // Negative signal keywords to boost sentiment_intensity
+    const negativeWords = ['complaint', 'problem', 'issue', 'error', 'crash', 'bad', 'worst', 'terrible', 'scam', 'fraud', 'lawsuit', 'violation', 'unsafe', 'danger', 'fail', 'broken', 'refund', 'delay', 'cancel'];
+    const negativeCount = negativeWords.filter(w => text.includes(w)).length;
+    const sentimentIntensity = Math.min(20, negativeCount * 4);
+
+    return scorePost(post, bestCategory, sentimentIntensity, 'keyword-classified');
+  });
 }
 
-function unclassified(post) {
+async function classifyBatch(posts, categories) {
+  const categoryList = categories.map(c => `- ID: ${c.id} | Name: ${c.name} | Description: ${c.description}`).join('\n');
+
+  const postsText = posts.map((p, idx) =>
+    `POST ${idx + 1}:\nTitle: ${p.title || '(no title)'}\nBody: ${(p.body || '').slice(0, 500)}\nSource: ${p.source}`
+  ).join('\n\n');
+
+  const response = await openai.chat.completions.create({
+    model: 'gpt-4o-mini',
+    max_tokens: 1024,
+    messages: [
+      { role: 'system', content: 'You classify social media posts for a monitoring system. Return ONLY valid JSON, no explanation.' },
+      { role: 'user', content: `Categories available:\n${categoryList}\n\nPosts to classify:\n${postsText}\n\nReturn a JSON array with exactly ${posts.length} objects:\n[{"category_id": "uuid or null", "sentiment_intensity": 0-20, "reasoning": "one sentence"}]\n\n- category_id: pick the best matching category ID from the list, or null if NOISE\n- sentiment_intensity: 0=neutral/positive, 20=extremely negative/urgent\n- reasoning: one sentence explaining why` },
+    ],
+  });
+
+  const text = response.choices[0].message.content.trim();
+  const match = text.match(/\[[\s\S]*\]/);
+  if (!match) throw new Error('no JSON array in response');
+
+  const classifications = JSON.parse(match[0]);
+
+  return posts.map((post, idx) => {
+    const cls = classifications[idx] || { category_id: null, sentiment_intensity: 0, reasoning: 'unclassified' };
+    const category = categories.find(c => c.id === cls.category_id);
+    return scorePost(post, category, cls.sentiment_intensity || 0, cls.reasoning || '');
+  });
+}
+
+function scorePost(post, category, sentimentIntensity, reasoning) {
+  const severity = category?.severity || 0;
+  const engagementScore = Math.min(20, Math.log1p(post.score || 0) * 4);
+  const ageHours = (Date.now() - new Date(post.created_at || Date.now())) / 3600000;
+  const recencyScore = Math.max(0, 20 - ageHours * 2);
+  const escalationScore = Math.round(engagementScore + recencyScore + severity + sentimentIntensity);
+  const threshold = parseInt(process.env.ESCALATE_THRESHOLD) || 60;
+
   return {
     ...post,
-    category: 'NOISE',
-    sentiment_intensity: 0,
-    reasoning: 'No OPENAI_API_KEY — add it to .env to enable AI classification.',
-    score: computeScore(post, 'NOISE', 0),
-    escalate: false,
+    category_id: category?.id || null,
+    sentiment_intensity: sentimentIntensity,
+    reasoning,
+    escalation_score: Math.min(100, escalationScore),
+    escalated: escalationScore >= threshold,
   };
-}
-
-async function classifyBatch(batch) {
-  if (!client) return batch.map(unclassified);
-
-  try {
-    const response = await client.chat.completions.create({
-      model: 'gpt-4o-mini',
-      max_tokens: 1024,
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        { role: 'user', content: buildUserMessage(batch) },
-      ],
-    });
-
-    const text = response.choices?.[0]?.message?.content ?? '';
-    const results = parseResponse(text, batch.length);
-
-    return batch.map((post, i) => {
-      const { category, sentimentIntensity, reasoning } = safeClassification(results[i]);
-      const score = computeScore(post, category, sentimentIntensity);
-      return {
-        ...post,
-        category,
-        sentiment_intensity: sentimentIntensity,
-        reasoning,
-        score,
-        escalate: score >= ESCALATE_THRESHOLD,
-      };
-    });
-  } catch (err) {
-    console.error(`[classifier] Batch failed: ${err.message}`);
-    return batch.map((post) => ({
-      ...post,
-      category: 'NOISE',
-      sentiment_intensity: 0,
-      reasoning: `Classification failed: ${err.message}`,
-      score: computeScore(post, 'NOISE', 0),
-      escalate: false,
-    }));
-  }
-}
-
-export async function classifyAndScore(posts) {
-  if (!posts.length) return [];
-
-  const batches = [];
-  for (let i = 0; i < posts.length; i += BATCH_SIZE) {
-    batches.push(posts.slice(i, i + BATCH_SIZE));
-  }
-
-  console.log(`[classifier] ${posts.length} posts → ${batches.length} batches of up to ${BATCH_SIZE}`);
-
-  const classified = [];
-  for (let i = 0; i < batches.length; i++) {
-    console.log(`[classifier] batch ${i + 1}/${batches.length}…`);
-    const results = await classifyBatch(batches[i]);
-    classified.push(...results);
-  }
-
-  const escalations = classified.filter((p) => p.escalate).length;
-  console.log(`[classifier] Done. ${escalations}/${classified.length} flagged for escalation.`);
-  return classified;
-}
-
-export function getTopEscalations(classifiedPosts, n = 5) {
-  return classifiedPosts
-    .filter((p) => p.escalate)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, n);
 }

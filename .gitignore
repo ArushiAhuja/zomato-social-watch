@@ -1,8 +1,12 @@
 # Environment — contains API keys, never commit
 .env
+.env.local
 
 # Dependencies
 node_modules/
+
+# Build output
+app/.next/
 
 # macOS
 .DS_Store
@@ -10,3 +14,8 @@ node_modules/
 # Logs
 *.log
 /tmp/
+
+# Old files
+SESSION_LOG.md
+SUBMISSION.md
+frontend/

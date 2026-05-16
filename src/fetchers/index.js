@@ -1,51 +1,48 @@
 import { fileURLToPath } from 'url';
-import fetchReddit from './reddit.js';
-import fetchHackerNews from './hackernews.js';
-import fetchGoogleNews from './news.js';
-import fetchPlayStore from './playstore.js';
-import fetchTwitter from './twitter.js';
+import { fetchReddit } from './reddit.js';
+import { fetchHackernews } from './hackernews.js';
+import { fetchNews } from './news.js';
+import { fetchPlaystore } from './playstore.js';
+import { fetchTwitter } from './twitter.js';
 
-export default async function fetchAll() {
-  const sources = [
-    { name: 'reddit',      fn: fetchReddit },
-    { name: 'hackernews',  fn: fetchHackerNews },
-    { name: 'google_news', fn: fetchGoogleNews },
-    { name: 'playstore',   fn: fetchPlayStore },
-    { name: 'twitter',     fn: fetchTwitter },
-  ];
+export async function fetchAll(orgConfig) {
+  const tasks = [];
+  const { sources } = orgConfig;
 
-  const results = await Promise.allSettled(sources.map((s) => s.fn()));
+  if (sources.reddit?.enabled) tasks.push(fetchReddit(sources.reddit));
+  if (sources.hackernews?.enabled) tasks.push(fetchHackernews(sources.hackernews));
+  if (sources.google_news?.enabled) tasks.push(fetchNews(sources.google_news));
+  if (sources.playstore?.enabled) tasks.push(fetchPlaystore(sources.playstore));
+  if (sources.twitter?.enabled) tasks.push(fetchTwitter(sources.twitter));
 
-  const merged = [];
-  results.forEach((result, i) => {
+  const results = await Promise.allSettled(tasks);
+
+  const allPosts = [];
+  for (const result of results) {
     if (result.status === 'fulfilled') {
-      merged.push(...result.value);
+      allPosts.push(...result.value);
     } else {
-      console.error(`[${sources[i].name}] FAILED: ${result.reason?.message ?? result.reason}`);
+      console.error('fetcher error:', result.reason?.message);
     }
+  }
+
+  // Drop anything older than 24 hours
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const fresh = allPosts.filter(p => {
+    const ts = new Date(p.created_at).getTime();
+    return !isNaN(ts) && ts >= cutoff;
   });
 
-  // Deduplicate by url
+  // Dedupe by URL
   const seen = new Set();
-  const deduped = merged.filter((post) => {
-    if (!post.url || seen.has(post.url)) return false;
-    seen.add(post.url);
+  const unique = fresh.filter(p => {
+    if (seen.has(p.url)) return false;
+    seen.add(p.url);
     return true;
   });
 
-  // Sort newest first
-  deduped.sort((a, b) => b.created_at - a.created_at);
-
-  console.log(`\n[index] Total after dedup: ${deduped.length} posts`);
-  return deduped;
+  console.log(`[fetchAll] ${unique.length} fresh posts (from ${allPosts.length} total)`);
+  return unique.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  const posts = await fetchAll();
-  console.log('Total posts:', posts.length);
-  console.log('\nSample (first 3):');
-  posts.slice(0, 3).forEach((p) => {
-    console.log(`  [${p.source}] ${p.created_at.toISOString()} | score:${p.score} | ${p.title.slice(0, 70)}`);
-    console.log(`    url: ${p.url}`);
-  });
-}
+export default fetchAll;

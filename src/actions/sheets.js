@@ -1,6 +1,6 @@
 import { google } from 'googleapis';
 
-let _sheets = null;
+const DRY_RUN = process.env.DRY_RUN === 'true';
 
 function parseCredentials(raw) {
   // Try plain JSON first; fall back to base64-encoded JSON
@@ -12,30 +12,22 @@ function parseCredentials(raw) {
   }
 }
 
-function getSheets() {
-  if (_sheets) return _sheets;
-
-  const raw = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
-  if (!raw?.trim()) throw new Error('GOOGLE_SERVICE_ACCOUNT_JSON env var not set');
-
-  const credentials = parseCredentials(raw);
-
+function buildSheets(serviceAccountJson) {
+  const credentials = parseCredentials(serviceAccountJson);
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ['https://www.googleapis.com/auth/spreadsheets'],
   });
-
-  _sheets = google.sheets({ version: 'v4', auth });
-  return _sheets;
+  return google.sheets({ version: 'v4', auth });
 }
 
-function toRow(post) {
+function toRow(post, category) {
   return [
     new Date().toISOString(),
     post.source,
-    post.category ?? 'NOISE',
-    post.score ?? 0,
-    post.escalate ? 'YES' : 'NO',
+    category?.name ?? 'Uncategorized',
+    post.escalation_score ?? 0,
+    post.escalated ? 'YES' : 'NO',
     post.title ?? '',
     post.url ?? '',
     post.author ?? '',
@@ -43,21 +35,24 @@ function toRow(post) {
   ];
 }
 
-export async function logToSheet(post, { dryRun = false } = {}) {
-  const sheetId = process.env.GOOGLE_SHEET_ID?.trim();
-  if (!sheetId) {
-    // Silently skip — already warned at startup via env.js
-    return;
-  }
+// post: the post object
+// category: the matching category object (or undefined)
+// config: { sheet_id: '...', service_account_json: '...' }
+export async function appendToSheet(post, category, config) {
+  const sheetId = config?.sheet_id;
+  if (!sheetId) throw new Error('sheet_id not set in config');
 
-  const row = toRow(post);
+  const serviceAccountRaw = config?.service_account_json || process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
+  if (!serviceAccountRaw?.trim()) throw new Error('service_account_json not provided');
 
-  if (dryRun) {
+  const row = toRow(post, category);
+
+  if (DRY_RUN) {
     console.log(`[sheets] DRY RUN — would append row: ${JSON.stringify(row)}`);
     return;
   }
 
-  const sheets = getSheets();
+  const sheets = buildSheets(serviceAccountRaw);
   await sheets.spreadsheets.values.append({
     spreadsheetId: sheetId,
     range: 'Sheet1!A:I',
@@ -65,4 +60,6 @@ export async function logToSheet(post, { dryRun = false } = {}) {
     insertDataOption: 'INSERT_ROWS',
     requestBody: { values: [row] },
   });
+
+  console.log(`[sheets] appended row for post ${post.id}`);
 }

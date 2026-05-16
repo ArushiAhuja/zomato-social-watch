@@ -1,33 +1,44 @@
-import { sendEmailAlert } from './emailer.js';
-import { logToSheet } from './sheets.js';
+import { sendEmail } from './emailer.js';
+import { appendToSheet } from './sheets.js';
 
-const DRY_RUN = process.env.DRY_RUN === 'true';
+export async function fireEscalations(posts, { orgId, rules, categories }) {
+  for (const post of posts) {
+    for (const rule of rules) {
+      // Check if rule applies to this post
+      const categoryMatch = rule.category_ids.length === 0 ||
+        rule.category_ids.includes(post.category_id);
+      const scoreMatch = post.escalation_score >= rule.score_threshold;
 
-export async function fireActions(post) {
-  const opts = { dryRun: DRY_RUN };
-  const results = { postId: post.id, email: null, sheet: null };
+      if (!categoryMatch || !scoreMatch) continue;
 
-  // ACTION 1 — Email alert (escalations only)
-  if (post.escalate) {
-    try {
-      await sendEmailAlert(post, opts);
-      results.email = 'sent';
-      console.log(`[actions] ✓ email ${DRY_RUN ? '(dry)' : 'sent'} for ${post.id}`);
-    } catch (err) {
-      results.email = `failed: ${err.message}`;
-      console.error(`[actions] ✗ email failed for ${post.id}: ${err.message}`);
+      const category = categories.find(c => c.id === post.category_id);
+
+      try {
+        if (rule.action_type === 'email' && rule.config.emails?.length) {
+          await sendEmail(post, category, rule.config);
+        } else if (rule.action_type === 'sheets' && rule.config.sheet_id) {
+          await appendToSheet(post, category, rule.config);
+        } else if (rule.action_type === 'webhook' && rule.config.url) {
+          await fireWebhook(post, category, rule.config);
+        }
+      } catch (err) {
+        console.error(`action error (rule ${rule.id}):`, err.message);
+      }
     }
   }
+}
 
-  // ACTION 2 — Sheet log (all posts)
-  try {
-    await logToSheet(post, opts);
-    results.sheet = 'logged';
-    console.log(`[actions] ✓ sheet ${DRY_RUN ? '(dry)' : 'logged'} for ${post.id}`);
-  } catch (err) {
-    results.sheet = `failed: ${err.message}`;
-    console.error(`[actions] ✗ sheet failed for ${post.id}: ${err.message}`);
-  }
-
-  return results;
+async function fireWebhook(post, category, config) {
+  await fetch(config.url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      source: post.source,
+      title: post.title,
+      url: post.url,
+      score: post.escalation_score,
+      category: category?.name,
+      reasoning: post.reasoning,
+    }),
+  });
 }

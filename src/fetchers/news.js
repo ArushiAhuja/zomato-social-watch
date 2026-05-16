@@ -3,26 +3,6 @@ import Parser from 'rss-parser';
 
 const TIMEOUT_MS = 10_000;
 
-// Default RSS feeds — all search specifically for Zomato/related terms, no auth needed.
-// Add more via RSS_FEEDS env var (comma-separated URLs).
-const DEFAULT_FEEDS = [
-  {
-    url: 'https://news.google.com/rss/search?q=zomato&hl=en-IN&gl=IN&ceid=IN:en',
-    source: 'google_news',
-    label: 'Google News IN',
-  },
-  {
-    url: 'https://news.google.com/rss/search?q=zomato+OR+blinkit+food+delivery&hl=en-US&gl=US&ceid=US:en',
-    source: 'rss',
-    label: 'Google News US',
-  },
-  {
-    url: 'https://news.google.com/rss/search?q=%22Deepinder+Goyal%22+OR+%22blinkit%22&hl=en-IN&gl=IN&ceid=IN:en',
-    source: 'rss',
-    label: 'Google News Founders',
-  },
-];
-
 const parser = new Parser({
   customFields: { item: [['dc:creator', 'dcCreator']] },
   requestOptions: { timeout: TIMEOUT_MS },
@@ -50,35 +30,40 @@ function makeNormalizer(source) {
   };
 }
 
-async function parseFeed(url, source, label) {
+async function parseFeed(url, label) {
   const feed = await parser.parseURL(url);
-  const posts = (feed.items ?? []).map(makeNormalizer(source));
-  console.log(`[rss:${label}] OK — ${posts.length} posts`);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+  const all = (feed.items ?? []).map(makeNormalizer('google_news'));
+  const posts = all.filter(p => p.created_at >= cutoff);
+  console.log(`[rss:${label}] OK — ${posts.length}/${all.length} posts (last 24h)`);
   return posts;
 }
 
-function getExtraFeeds() {
-  const raw = process.env.RSS_FEEDS?.trim();
-  if (!raw) return [];
-  return raw
-    .split(',')
-    .map((u) => u.trim())
-    .filter(Boolean)
-    .map((url) => {
-      let hostname = url;
-      try { hostname = new URL(url).hostname.replace(/^www\./, ''); } catch {}
-      return { url, source: 'rss', label: hostname };
-    });
-}
+// Accept { config } where config.rss_urls is an array of RSS feed URLs
+export async function fetchNews({ config = {} } = {}) {
+  const rssUrls = Array.isArray(config.rss_urls) && config.rss_urls.length
+    ? config.rss_urls
+    : [];
 
-export default async function fetchNews() {
-  const allFeeds = [...DEFAULT_FEEDS, ...getExtraFeeds()];
+  if (!rssUrls.length) {
+    console.log('[rss] no rss_urls configured, skipping');
+    return [];
+  }
+
   const results = [];
+  const seenIds = new Set();
 
-  for (const { url, source, label } of allFeeds) {
+  for (const url of rssUrls) {
+    let label = url;
+    try { label = new URL(url).searchParams.get('q') || new URL(url).hostname; } catch {}
     try {
-      const posts = await parseFeed(url, source, label);
-      results.push(...posts);
+      const posts = await parseFeed(url, label);
+      for (const post of posts) {
+        if (!seenIds.has(post.id)) {
+          seenIds.add(post.id);
+          results.push(post);
+        }
+      }
     } catch (err) {
       console.warn(`[rss:${label}] FAILED: ${err.message}`);
     }
@@ -86,3 +71,5 @@ export default async function fetchNews() {
 
   return results;
 }
+
+export default fetchNews;

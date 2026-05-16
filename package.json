@@ -1,7 +1,7 @@
 {
   "name": "zomato-social-watch",
-  "version": "1.0.0",
-  "description": "Real-time dashboard monitoring Reddit, HN, Google News, and Play Store for Zomato mentions — classifies with Claude AI, scores by escalation priority, and fires email/sheet alerts.",
+  "version": "2.0.0",
+  "description": "Spill — multi-tenant ops platform for social monitoring",
   "main": "src/server.js",
   "type": "module",
   "engines": {
@@ -11,16 +11,20 @@
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
     "test:fetch": "node src/fetchers/index.js",
-    "test:actions": "DRY_RUN=true node src/test-actions.js"
+    "test:actions": "DRY_RUN=true node src/test-actions.js",
+    "db:migrate": "node src/scripts/migrate.js"
   },
   "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "openai": "^4.0.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "google-play-scraper": "^10.1.2",
     "googleapis": "^171.4.0",
+    "jsonwebtoken": "^9.0.2",
     "nodemailer": "^8.0.7",
-    "openai": "^6.36.0",
+    "pg": "^8.13.0",
     "rss-parser": "^3.13.0"
   },
   "devDependencies": {
