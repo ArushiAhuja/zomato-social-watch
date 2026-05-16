@@ -166,6 +166,18 @@ export default function FeedPage({ params }) {
     fetchStatus()
   }, [fetchPosts, fetchStatus])
 
+  // Auto-refresh on page load if data is stale — mirrors original Express scheduler
+  // which called runOrgCycle immediately on startup, no cron needed.
+  useEffect(() => {
+    const key = `spill:lastRefresh:${slug}`
+    const last = parseInt(sessionStorage.getItem(key) || '0', 10)
+    const staleMs = 5 * 60 * 1000 // 5 minutes
+    if (Date.now() - last > staleMs) {
+      sessionStorage.setItem(key, String(Date.now()))
+      api.triggerRefresh(slug).catch(() => {})
+    }
+  }, [slug])
+
   async function handleRefresh() {
     setRefreshing(true)
     try {

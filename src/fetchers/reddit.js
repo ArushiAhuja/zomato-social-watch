@@ -77,24 +77,13 @@ export async function fetchReddit({ config = {}, credentials = {} } = {}) {
     }
   }
 
-  // Build endpoints:
-  // - If subreddits are configured: search within those subreddits only (much less noise)
-  // - If no subreddits: fall back to global search with ONLY the first (most specific) query
-  const endpoints = [];
-  if (subreddits.length > 0) {
-    for (const sr of subreddits) {
-      for (const q of queries) {
-        const encoded = encodeURIComponent(q);
-        endpoints.push(`https://www.reddit.com/r/${sr}/search.json?q=${encoded}&restrict_sr=1&sort=relevance&t=day&limit=50`);
-      }
-    }
-  } else {
-    // Global search — only use the first query to minimise noise
-    const encoded = encodeURIComponent(queries[0]);
-    endpoints.push(`https://www.reddit.com/search.json?q=${encoded}&sort=relevance&t=day&limit=50`);
-  }
+  // Always use global search with at most 3 queries.
+  // Subreddit-scoped search is intentionally skipped — multiplying endpoints causes timeouts.
+  const topQueries = queries.slice(0, 3);
+  const endpoints = topQueries.map(q =>
+    `https://www.reddit.com/search.json?q=${encodeURIComponent(q)}&sort=new&t=day&limit=50`
+  );
 
-  // Fetch sequentially with a small delay to avoid Reddit 429 rate limits
   const delay = ms => new Promise(r => setTimeout(r, ms));
   const seen = new Set();
   const posts = [];
@@ -114,7 +103,7 @@ export async function fetchReddit({ config = {}, credentials = {} } = {}) {
       console.warn(`[reddit] endpoint failed: ${err.message}`);
       skipped++;
     }
-    if (ok + skipped < endpoints.length) await delay(400);
+    if (ok + skipped < endpoints.length) await delay(200);
   }
 
   console.log(`[reddit] OK — ${posts.length} posts (${ok}/${endpoints.length} endpoints)`);
